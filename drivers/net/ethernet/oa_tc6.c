@@ -1108,6 +1108,9 @@ struct oa_tc6 *oa_tc6_init(struct spi_device *spi, struct net_device *netdev,
 		return NULL;
 	}
 
+	/* call irq handler so a empty chunk is transmitted which then deasserts the interrupt */
+	macphy_irq_handler(spi->irq, tc6);
+
 	return tc6;
 }
 EXPORT_SYMBOL_GPL(oa_tc6_init);
