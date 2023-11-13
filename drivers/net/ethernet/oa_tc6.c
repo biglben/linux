@@ -272,6 +272,8 @@ static int oa_tc6_configure(struct oa_tc6 *tc6)
 	if (ret)
 		return ret;
 
+	/* This is not enabling anything (and of multiple bit = 0, probably or intended)
+	 * but as then the errors would have to handled probably, its left at it is */
 	regval &= ~(TXPEM & TXBOEM & TXBUEM & RXBOEM & LOFEM & HDREM);
 
 	ret = oa_tc6_perform_ctrl(tc6, IMASK0, &regval, 1, true, false);
@@ -740,6 +742,7 @@ static int oa_tc6_process_rx_chunks(struct oa_tc6 *tc6, u8 *buf, u16 len)
 		/* Check for footer errors */
 		ret = oa_tc6_check_ftr_errors(tc6, ftr);
 		if (ret) {
+			/* if imask0 would been set properly this would lead to have still rx chunks available which will never be read */
 			if (tc6->rx_eth_started)
 				oa_tc6_drop_rx_eth(tc6);
 			return ret;
