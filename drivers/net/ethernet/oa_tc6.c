@@ -358,7 +358,8 @@ static int oa_tc6_configure(struct oa_tc6 *tc6)
 		tc6->cps = OA_TC6_MAX_CPS;
 	}
 
-	regval |= FIELD_PREP(CPS, ilog2(tc6->cps) / ilog2(2)) | SYNC;
+	/* ZARFE needed according to errata item s3. */
+	regval |= FIELD_PREP(CPS, ilog2(tc6->cps) / ilog2(2)) | SYNC | ZARFE;
 
 	return oa_tc6_perform_ctrl(tc6, CONFIG0, &regval, 1, true, false);
 }

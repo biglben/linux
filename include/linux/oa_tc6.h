@@ -68,6 +68,7 @@
 /* Configuration Register #0 */
 #define CONFIG0		0x0004
 #define SYNC		BIT(15)	/* Configuration Synchronization */
+#define ZARFE		BIT(12) /* Zero-Align Receive Frame Enable */
 #define TXCTE		BIT(9)	/* Tx cut-through enable */
 #define RXCTE		BIT(8)	/* Rx cut-through enable */
 #define PROTE		BIT(5)	/* Ctrl read/write Protection Enable */
