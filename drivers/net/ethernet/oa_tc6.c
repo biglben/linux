@@ -12,6 +12,10 @@
 #include <linux/of.h>
 #include <linux/oa_tc6.h>
 
+static_assert(TC6_FTR_SIZE == TC6_HDR_SIZE,
+	      "FTR and header size not equal, buffer overflow risk");
+#define SPI_ETH_BUFSIZE (ETH_LEN + (OA_TC6_MAX_CPS * TC6_FTR_SIZE))
+
 /* Opaque structure for MACPHY drivers */
 struct oa_tc6 {
 	int (*config_cps_buf)(void *tc6, u32 cps);
@@ -915,6 +919,11 @@ static int oa_tc6_perform_spi_xfer(struct oa_tc6 *tc6)
 
 			total_len = tx_len + rca_len;
 		}
+		if (total_len > SPI_ETH_BUFSIZE) {
+			/* limit to buffer and makes sure whole chunks will be used */
+			total_len = SPI_ETH_BUFSIZE / (tc6->cps + TC6_HDR_SIZE);
+			total_len *= (tc6->cps + TC6_HDR_SIZE);
+		}
 		ret = oa_tc6_spi_transfer(tc6->spi, tc6->spi_tx_buf,
 					  tc6->spi_rx_buf, total_len);
 		if (ret)
@@ -993,6 +1002,13 @@ netdev_tx_t oa_tc6_send_eth_pkt(struct oa_tc6 *tc6, struct sk_buff *skb)
 		netif_stop_queue(tc6->netdev);
 		return NETDEV_TX_BUSY;
 	}
+	if (skb->len > ETH_LEN) {
+		net_err_ratelimited("%s: socket buffer input too big\n",
+				    tc6->netdev->name);
+		tc6->netdev->stats.tx_dropped++;
+		dev_kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
 
 	tc6->tx_skb = skb;
 	/* Prepare tx chunks using the tx ethernet frame */
@@ -1037,26 +1053,22 @@ struct oa_tc6 *oa_tc6_init(struct spi_device *spi, struct net_device *netdev,
 		return NULL;
 
 	/* Allocate memory for the tx buffer used for SPI transfer. */
-	tc6->spi_tx_buf = devm_kzalloc(&spi->dev, ETH_LEN + (OA_TC6_MAX_CPS * TC6_HDR_SIZE),
-				       GFP_KERNEL);
+	tc6->spi_tx_buf = devm_kzalloc(&spi->dev, SPI_ETH_BUFSIZE, GFP_KERNEL);
 	if (!tc6->spi_tx_buf)
 		return NULL;
 
 	/* Allocate memory for the rx buffer used for SPI transfer. */
-	tc6->spi_rx_buf = devm_kzalloc(&spi->dev, ETH_LEN + (OA_TC6_MAX_CPS * TC6_FTR_SIZE),
-				       GFP_KERNEL);
+	tc6->spi_rx_buf = devm_kzalloc(&spi->dev, SPI_ETH_BUFSIZE, GFP_KERNEL);
 	if (!tc6->spi_rx_buf)
 		return NULL;
 
 	/* Allocate memory for the tx ethernet chunks to transfer on SPI. */
-	tc6->eth_tx_buf = devm_kzalloc(&spi->dev, ETH_LEN + (OA_TC6_MAX_CPS * TC6_HDR_SIZE),
-				       GFP_KERNEL);
+	tc6->eth_tx_buf = devm_kzalloc(&spi->dev, SPI_ETH_BUFSIZE, GFP_KERNEL);
 	if (!tc6->eth_tx_buf)
 		return NULL;
 
 	/* Allocate memory for the rx ethernet packet. */
-	tc6->eth_rx_buf = devm_kzalloc(&spi->dev, ETH_LEN + (OA_TC6_MAX_CPS * TC6_FTR_SIZE),
-				       GFP_KERNEL);
+	tc6->eth_rx_buf = devm_kzalloc(&spi->dev, SPI_ETH_BUFSIZE, GFP_KERNEL);
 	if (!tc6->eth_rx_buf)
 		return NULL;
 
