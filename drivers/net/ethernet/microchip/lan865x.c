@@ -30,6 +30,8 @@
 #define LAN865X_QRXCFG		0x000A0082
 #define LAN865X_BUFSZ		GENMASK(22, 20) /* Buffer Size */
 
+#define LAN865X_STATS0 0x010208
+
 #define MAC_PROMISCUOUS_MODE	BIT(4)
 #define MAC_MULTICAST_MODE	BIT(6)
 #define MAC_UNICAST_MODE	BIT(7)
@@ -103,12 +105,171 @@ lan865x_get_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *info)
 		sizeof(info->bus_info));
 }
 
+/************ Hacky get stats ***********************/
+struct lan865x_specific_stats {
+	u64 RxSymbolErr;
+	u64 LengthFieldErr;
+	u64 OversizeRx;
+	u64 UndersizeRx;
+	u64 RxResourceErr;
+	u64 RxBufferOverruns;
+	u64 RxFifoOverruns;
+	u64 FrameCheckSeqErr;
+	u64 TypeId4MatchCnt;
+	u64 TypeId3MatchCnt;
+	u64 TypeId2MatchCnt;
+	u64 TypeId1MatchCnt;
+	u64 SpecAdd4MatchCnt;
+	u64 SpecAdd3MatchCnt;
+	u64 SpecAdd2MatchCnt;
+	u64 SpecAdd1MatchCnt;
+	u64 UnicastHashMatchFramesRxWoErr;
+	u64 MulticastHashMatchFramesRxWoErr;
+	u64 BroadcastFramesRxWoErr;
+	u64 VlanFramesRxWoErr;
+	u64 RxTotalWithErr;
+	u64 RxTotalWoErr;
+	u64 TxAbortInErr;
+	u64 TxAbortExtErr;
+	u64 TxFifoUnderruns;
+	u64 TxBufferUnderruns;
+	u64 ExcessiveCollisions;
+	u64 TxTotalWithErr;
+	u64 TxTotalWoErr;
+};
+
+static struct lan865x_specific_stats lan865x_stats = { 0 };
+
+static void lan865x_get_strings(struct net_device *netdev, u32 stringset,
+				u8 *data)
+{
+	static const char lan865x_stat_strings[][ETH_GSTRING_LEN] = {
+		"RxSymbolErr",
+		"LengthFieldErr",
+		"OversizeRx",
+		"UndersizeRx",
+		"RxResourceErr",
+		"RxBufferOverruns",
+		"RxFifoOverruns",
+		"FrameCheckSeqErr",
+		"TypeId4MatchCnt",
+		"TypeId3MatchCnt",
+		"TypeId2MatchCnt",
+		"TypeId1MatchCnt",
+		"SpecAdd4MatchCnt",
+		"SpecAdd3MatchCnt",
+		"SpecAdd2MatchCnt",
+		"SpecAdd1MatchCnt",
+		"UnicastHashMatchFramesRxWoErr",
+		"MulticastHashMatchFramesRxWoErr",
+		"BroadcastFramesRxWoErr",
+		"VlanFramesRxWoErr",
+		"RxTotalWithErr",
+		"RxTotalWoErr",
+		"TxAbortInErr",
+		"TxAbortExtErr",
+		"TxFifoUnderruns",
+		"TxBufferUnderruns",
+		"ExcessiveCollisions",
+		"TxTotalWithErr",
+		"TxTotalWoErr"
+	};
+	memcpy(data, lan865x_stat_strings, sizeof(lan865x_stat_strings));
+}
+
+static void lan865x_get_ethtool_stats(struct net_device *netdev,
+				      struct ethtool_stats *ethStats,
+				      uint64_t *data)
+{
+	struct lan865x_priv *priv = netdev_priv(netdev);
+	u32 stats[13];
+	memset(stats, 0, sizeof(stats));
+	int ret = -1;
+	for (uint8_t st = 0; st < 13; st++) {
+		ret = oa_tc6_read_register(priv->tc6, LAN865X_STATS0 + st,
+					   &stats[st]);
+		if (ret) {
+			netdev_err(netdev, "can not read stat %u, ret: %d", st,
+				   ret);
+		}
+	}
+
+	lan865x_stats.RxSymbolErr += (stats[0] >> 24) & 0xff;
+	lan865x_stats.LengthFieldErr += (stats[0] >> 16) & 0xff;
+	lan865x_stats.OversizeRx += (stats[0] >> 8) & 0xff;
+	lan865x_stats.UndersizeRx += (stats[0]) & 0xff;
+	lan865x_stats.RxResourceErr += (stats[1] >> 24) & 0xff;
+	lan865x_stats.RxBufferOverruns += (stats[1] >> 16) & 0xff;
+	lan865x_stats.RxFifoOverruns += (stats[1] >> 8) & 0xff;
+	lan865x_stats.FrameCheckSeqErr += stats[2];
+	lan865x_stats.TypeId4MatchCnt += (stats[3] >> 24) & 0xff;
+	lan865x_stats.TypeId3MatchCnt += (stats[3] >> 16) & 0xff;
+	lan865x_stats.TypeId2MatchCnt += (stats[3] >> 8) & 0xff;
+	lan865x_stats.TypeId1MatchCnt += (stats[3]) & 0xff;
+	lan865x_stats.SpecAdd4MatchCnt += (stats[4] >> 24) & 0xff;
+	lan865x_stats.SpecAdd3MatchCnt += (stats[4] >> 16) & 0xff;
+	lan865x_stats.SpecAdd2MatchCnt += (stats[4] >> 8) & 0xff;
+	lan865x_stats.SpecAdd1MatchCnt += (stats[4]) & 0xff;
+	lan865x_stats.UnicastHashMatchFramesRxWoErr = (stats[5] >> 24) & 0xff;
+	lan865x_stats.MulticastHashMatchFramesRxWoErr += (stats[5] >> 16) &
+							 0xff;
+	lan865x_stats.BroadcastFramesRxWoErr += (stats[5] >> 8) & 0xff;
+	lan865x_stats.VlanFramesRxWoErr += (stats[5]) & 0xff;
+	lan865x_stats.RxTotalWithErr += stats[6];
+	lan865x_stats.RxTotalWoErr += stats[7];
+	lan865x_stats.TxAbortInErr += stats[8] & 0xff;
+	lan865x_stats.TxAbortExtErr += (stats[9] >> 24) & 0xff;
+	lan865x_stats.TxFifoUnderruns += (stats[9] >> 16) & 0xff;
+	lan865x_stats.TxBufferUnderruns += (stats[9] >> 8) & 0xff;
+	lan865x_stats.ExcessiveCollisions += stats[10];
+	lan865x_stats.TxTotalWithErr += stats[11];
+	lan865x_stats.TxTotalWoErr += stats[12];
+
+	data[0] = lan865x_stats.RxSymbolErr;
+	data[1] = lan865x_stats.LengthFieldErr;
+	data[2] = lan865x_stats.OversizeRx;
+	data[3] = lan865x_stats.UndersizeRx;
+	data[4] = lan865x_stats.RxResourceErr;
+	data[5] = lan865x_stats.RxBufferOverruns;
+	data[6] = lan865x_stats.RxFifoOverruns;
+	data[7] = lan865x_stats.FrameCheckSeqErr;
+	data[8] = lan865x_stats.TypeId4MatchCnt;
+	data[9] = lan865x_stats.TypeId3MatchCnt;
+	data[10] = lan865x_stats.TypeId2MatchCnt;
+	data[11] = lan865x_stats.TypeId1MatchCnt;
+	data[12] = lan865x_stats.SpecAdd4MatchCnt;
+	data[13] = lan865x_stats.SpecAdd3MatchCnt;
+	data[14] = lan865x_stats.SpecAdd2MatchCnt;
+	data[15] = lan865x_stats.SpecAdd1MatchCnt;
+	data[16] = lan865x_stats.UnicastHashMatchFramesRxWoErr;
+	data[17] = lan865x_stats.MulticastHashMatchFramesRxWoErr;
+	data[18] = lan865x_stats.BroadcastFramesRxWoErr;
+	data[19] = lan865x_stats.VlanFramesRxWoErr;
+	data[20] = lan865x_stats.RxTotalWithErr;
+	data[21] = lan865x_stats.RxTotalWoErr;
+	data[22] = lan865x_stats.TxAbortInErr;
+	data[23] = lan865x_stats.TxAbortExtErr;
+	data[24] = lan865x_stats.TxFifoUnderruns;
+	data[25] = lan865x_stats.TxBufferUnderruns;
+	data[26] = lan865x_stats.ExcessiveCollisions;
+	data[27] = lan865x_stats.TxTotalWithErr;
+	data[28] = lan865x_stats.TxTotalWoErr;
+}
+
+static int lan865x_get_sset_count(struct net_device *netdev, int sset)
+{
+	return 29;
+}
+
 static const struct ethtool_ops lan865x_ethtool_ops = {
-	.get_drvinfo	= lan865x_get_drvinfo,
-	.get_msglevel	= lan865x_get_msglevel,
-	.set_msglevel	= lan865x_set_msglevel,
+	.get_drvinfo = lan865x_get_drvinfo,
+	.get_msglevel = lan865x_get_msglevel,
+	.set_msglevel = lan865x_set_msglevel,
 	.get_link_ksettings = phy_ethtool_get_link_ksettings,
 	.set_link_ksettings = phy_ethtool_set_link_ksettings,
+	.get_ethtool_stats = lan865x_get_ethtool_stats,
+	.get_strings = lan865x_get_strings,
+	.get_sset_count = lan865x_get_sset_count,
 };
 
 static void lan865x_tx_timeout(struct net_device *netdev, unsigned int txqueue)
